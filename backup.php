@@ -1,179 +1,202 @@
 <?php
-/**
-* Function list:
-* - Zip()
-* - backup()
-* - human_filesize()
-* - getFileList()
+/** Function list:
+*  - run_backup()
+*  - human_filesize()
+*  - getFileList()
+*
+* backup function call arround line 162:
+* run_backup($folder_to_backup, $backup_file_name, $not_to_backup);
 */
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
 
-function Zip($source, $destination, $include_dir = false, $exclusions  = false) {
+
+/** for debugging only
+*ini_set('display_errors', 1);
+*ini_set('display_startup_errors', 1);
+*error_reporting(E_ALL);
+*/
+
+
+/**   Zip-the-Space
+* just a copy&forget backup script
+* with default settings all files and folder arround this script
+* will be instandly archived in a easy recognizable .zip file
+* and saved in the folder "backups", which is not archived with.
+* the backup folder will be created in the first runs
+* after the run, a list with all archives will be shown to download the backup
+*
+* feel free to change or extend the script and make it public
+*/
+
+
+// path to the folder to be archived
+// leave empty '' for the root folder or point without circumnavigating slashes 'content/images'
+$folder_to_backup = '';
+// path to the folder, where the backups are inside, without circumnavigating slashes too
+$backup_folder = 'backups';
+// it is not a goof idea to backup the backups, so lets exclude the backup_folder
+// or if you want to protect your privacy:  array($backup_folder, 'privat', 'config');
+$not_to_backup = array($backup_folder);
+
+
+/**
+hopefully nothing else to change from here :-)
+**/
+
+
+// string "magic" for the name of the backup file
+// no "/" in the filename for the case, that the "folder_to_backup" contains a path like "content/images"
+if (!empty($folder_to_backup)) $line = str_replace('/', '_', '/' . $folder_to_backup); else $line = '';
+// just the folder where this script runs and from where we look out
+$script_folder_name = str_replace("/", "", substr($_SERVER['SCRIPT_NAME'], 0, strrpos($_SERVER['SCRIPT_NAME'], "/") + 1));
+// the path and name of the backup file, loos like this: "backups/1982_02_10_23_45_picowiki.zip" or "backups/1982_02_10_23_45_picowiki_content_images.zip"
+$backup_file_name   = $backup_folder . '/' . date("Y_m_d_H_i") . '_' . $script_folder_name . $line . '.zip';
+
+// create the backup_folder if it not exist
+if (!file_exists($backup_folder)) {mkdir($backup_folder, 0777, true);}
+
+// Backup function
+function run_backup($folder_to_backup, $backup_file_name, $not_to_backup)
+{
     // Remove existing archive
-    if (file_exists($destination)) {
-        unlink($destination);
-    }
+    if (file_exists($backup_file_name)){unlink($backup_file_name);}
 
-    $zip         = new ZipArchive();
-    if (!$zip->open($destination, ZIPARCHIVE::CREATE)) {
-        return false;
-    }
-    $source  = str_replace('\\', '/', realpath($source));
-    if (is_dir($source) === true) {
-        $files   = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($source) , RecursiveIteratorIterator::SELF_FIRST);
-        if ($include_dir) {
-            $arr     = explode("/", $source);
-            $maindir = $arr[count($arr) - 1];
-            $source  = "";
-            for ($i       = 0;$i < count($arr) - 1;$i++) {
-                $source .= '/' . $arr[$i];
-            }
-            $source = substr($source, 1);
-            $zip->addEmptyDir($maindir);
-        }
-        foreach ($files as $file) {
-            // Ignore "." and ".." folders
-            $file = str_replace('\\', '/', $file);
-            if (in_array(substr($file, strrpos($file, '/') + 1) , array('.','..'))) {
-                continue;
-            }
+    $zip = new ZipArchive();
+    if (!$zip->open($backup_file_name, ZIPARCHIVE::CREATE)){return false;}
 
-            // Add Exclusion
-            if (($exclusions) && (is_array($exclusions))) {
-                if (in_array(str_replace($source . '/', '', $file) , $exclusions)) {
-                    continue;
-                }
-            }
+    $folder_to_backup  = str_replace('\\', '/', realpath($folder_to_backup));
+    if (is_dir($folder_to_backup) === true)
+    {
+      $files = new RecursiveIteratorIterator(
+        new RecursiveCallbackFilterIterator(
+          new RecursiveDirectoryIterator(
+            $folder_to_backup,RecursiveDirectoryIterator::SKIP_DOTS),
+            function ($fileInfo, $key, $iterator) use ($not_to_backup) {
+              return $fileInfo->isFile() || !in_array($fileInfo->getBaseName(), $not_to_backup);
+              } ) );
 
+            foreach ($files as $file)
+            {
+            // run through the filelist and add to zip
             $file = realpath($file);
-            if (is_dir($file) === true) {
-                $zip->addEmptyDir(str_replace($source . '/', '', $file . '/'));
+            if (is_dir($file) === true)
+            {
+                $zip->addEmptyDir(str_replace($folder_to_backup . '/', '', $file . '/'));
             }
-            elseif (is_file($file) === true) {
-                $zip->addFromString(str_replace($source . '/', '', $file) , file_get_contents($file));
+            elseif (is_file($file) === true)
+            {
+                $zip->addFromString(str_replace($folder_to_backup . '/', '', $file) , file_get_contents($file));
             }
         }
     }
-    elseif (is_file($source) === true) {
-        $zip->addFromString(basename($source) , file_get_contents($source));
+    elseif (is_file($folder_to_backup) === true)
+    {
+        $zip->addFromString(basename($folder_to_backup) , file_get_contents($folder_to_backup));
     }
     return $zip->close();
-}
+} // Backup function
 
-function human_filesize($bytes, $decimals = 2) {
+
+
+// get filesize of the archives for the list
+function human_filesize($bytes, $decimals = 2)
+{
     $factor   = floor((strlen($bytes) - 1) / 3);
     if ($factor > 0) $sz       = 'KMGT';
     return sprintf("%.{$decimals}f", $bytes / pow(1024, $factor)) . @$sz[$factor - 1] . 'B';
-}
+} // get filesize
 
-function getFileList($dir, $recurse = false) {
+
+
+// make list of all archives
+function getFileList($dir, $recurse = false)
+{
     // array to hold return value
     $retval  = [];
 
     // add trailing slash if missing
-    if (substr($dir, -1) != "/") {
+    if (substr($dir, -1) != "/")
+    {
         $dir .= "/";
     }
 
     // open pointer to directory and read list of files
-    $d      = @dir($dir) or die("getFileList: Failed opening directory {$dir} for reading");
-    while (false !== ($entry  = $d->read())) {
+    $dir_list = @dir($dir) or die("getFileList: Failed opening directory {$dir} for reading");
+    while (false !== ($entry  = $dir_list->read()))
+    {
         // skip hidden files
         if ($entry{0} == ".") continue;
-        if (is_dir("{$dir}{$entry}")) {
-            // just eleminate the folder lines
-            // $retval[] = [
-            //   'name' => str_replace("./","","{$dir}{$entry}"),
-            //   'type' => filetype("{$dir}{$entry}"),
-            //   'size' => "",
-            //   'lastmod' => date("d. F Y H:i", filemtime("{$dir}{$entry}"))
-            // ];
-            if ($recurse && is_readable("{$dir}{$entry}/")) {
-                if (is_array(getFileList("{$dir}{$entry}/", true))) {
+        if (is_dir("{$dir}{$entry}"))
+        {
+            if ($recurse && is_readable("{$dir}{$entry}/"))
+            {
+                if (is_array(getFileList("{$dir}{$entry}/", true)))
+                {
                     $retval = array_merge($retval, getFileList("{$dir}{$entry}/", true));
                 }
-                else { {
-                        continue;
-                    }
-                }
-
+                else{continue;}
             }
         }
-        elseif (is_readable("{$dir}{$entry}")) {
-
+        elseif (is_readable("{$dir}{$entry}"))
+        {
             $retval[] = [
-              'name' => "<a href=\" " . str_replace("./", "", "{$dir}{$entry}") . " \">" . str_replace("./", "", "{$dir}{$entry}") . "</a>",
-              'type' => mime_content_type("{$dir}{$entry}") ,
-              'size' => human_filesize(filesize("{$dir}{$entry}") , 2) ,
-              'lastmod' => date("d. F Y H:i", filemtime("{$dir}{$entry}"))
-            ];
+              'name'    => "<a href=\" " . str_replace("./", "", "{$dir}{$entry}") . " \">" . str_replace("./", "", "{$entry}") . "</a>",
+              'type'    => mime_content_type("{$dir}{$entry}") ,
+              'size'    => human_filesize(filesize("{$dir}{$entry}") , 2) ,
+              'lastmod' => date("d. F Y H:i", filemtime("{$dir}{$entry}")) ];
         }
     }
-    $d->close();
+    $dir_list->close();
 
     // sort array
-    foreach ($retval as $key => $row) {
-        $name[$key]     = $row['name'];
+    foreach ($retval as $key => $row)
+    {
+        $name[$key] = $row['name'];
     }
-    if (isset($name) and is_array($name)) {
+    if (isset($name) and is_array($name))
+    {
         array_multisort($name, SORT_ASC, SORT_STRING, $retval);
     }
-
     // print_r($retval);
     return $retval;
+}// make list of all archives
+
+// run di dance
+run_backup($folder_to_backup, $backup_file_name, $not_to_backup);
+
+
+// HTML output of all archives
+
+// make link to go back
+if (isset($_SERVER['HTTP_REFERER']))
+{
+    $link = $_SERVER['HTTP_REFERER'];
+}
+else
+{
+    $link = "https://" . $_SERVER['SERVER_NAME'] . substr($_SERVER['SCRIPT_NAME'], 0, strrpos($_SERVER['SCRIPT_NAME'], "/") + 1);
 }
 
-function backup($path) {
-    $backup     = $path;
-    $exclusions = [];
-    // Excluding an entire directory
-    $files      = new RecursiveIteratorIterator(new RecursiveDirectoryIterator('backups/') , RecursiveIteratorIterator::SELF_FIRST);
-    foreach ($files as $file) {
-        array_push($exclusions, $file);
-    }
-    // Excluding a file
-    // array_push($exclusions, 'config/config.php');
-    // Excluding the backup file
-    array_push($exclusions, $backup);
-    Zip('.', $backup, false, $exclusions);
-}
-
-
-$date = date("Y-m-d_H-i");
-$path = 'backups/' . $date . '_webseite_de.zip';
-backup($path);
-
-
+//echo str_replace("/","",substr($_SERVER['SCRIPT_NAME'],0,strrpos($_SERVER['SCRIPT_NAME'],"/")+1));
 
 // output file list in HTML TABLE format
-$dirlist = getFileList("backups/", 1); // 1 = include subdirectories
-echo "<style>";
-echo "a:link,a:visited {text-decoration: none; color: #000;}";
-echo "a:hover ,a:active {text-decoration: none; color: grey;}";
-echo "ul {display: table;padding-left: 0;font: 1em Candara;}";
-echo "li {display: table-row;}";
-echo "li.head {font-weight: bold; display: table-row;}";
-echo "li > span {display: table-cell;padding: 0 0.5em;}";
-echo ".right {text-align:right;}";
-echo "</style>";
-
-echo "<h1>Backups</h1>";
-echo "<ul><li class=\"head\">\n";
-echo "<span>Name</span>\n";
-// echo "<span>Type</span>\n";
-echo "<span>Size</span>\n";
-echo "<span>Last Modified</span>\n";
-echo "</li>\n";
-foreach ($dirlist as $file) {
-    echo "<li>\n";
-    echo "<span>{$file['name']}</span>\n";
-    // echo "<span>{$file['type']}</span>\n";
-    echo "<span class=\"right\">{$file['size']}</span>\n";
-    echo "<span>{$file['lastmod']}</span>\n";
-    echo "</li>\n";
+$dirlist = getFileList($backup_folder, 1); // 1 = include subdirectories
+echo "<!DOCTYPE html>\n";
+echo "<style>\n";
+echo "body {font-family: Lucida Console, Monaco, monospace;}\n";
+echo "a:link, a:visited {text-decoration: none; color: #000;}\n";
+echo "a:hover, a:active {text-decoration: none; color: grey;}\n";
+echo "ul {display: table; padding-left: 0;  line-height: 150%;}\n";
+echo "li {display: table-row;}\n";
+echo "li.head {font-weight: bold; display: table-row;}\n";
+echo "li > span {display: table-cell; padding: 0 1em;}\n";
+echo ".right {text-align: right;}\n";
+echo "</style>\n";
+echo "<h1>{$script_folder_name}-Backups</h1>\n";
+echo "<a href={$link}>Back to: {$script_folder_name}</a>\n";
+echo "<ul>\n<li class=\"head\"><span>Name</span><span>Size</span><span>Last Modified</span></li>\n";
+foreach ($dirlist as $file)
+{
+    echo "<li><span>{$file['name']}</span><span class=\"right\">{$file['size']}</span><span>{$file['lastmod']}</span></li>\n";
 }
 echo "</ul>\n\n";
-
 ?>

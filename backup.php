@@ -31,11 +31,16 @@
 // path to the folder to be archived
 // leave empty '' for the root folder or point without circumnavigating slashes 'content/images'
 $folder_to_backup = '';
+
 // path to the folder, where the backups are inside, without circumnavigating slashes too
 $backup_folder = 'backups';
+
 // it is not a goof idea to backup the backups, so lets exclude the backup_folder
 // or if you want to protect your privacy:  array($backup_folder, 'privat', 'config');
 $not_to_backup = array($backup_folder);
+
+// name of the script for filenamed
+$script_folder_name = 'docs.rasal.de';
 
 
 /**
@@ -46,13 +51,17 @@ hopefully nothing else to change from here :-)
 // string "magic" for the name of the backup file
 // no "/" in the filename for the case, that the "folder_to_backup" contains a path like "content/images"
 if (!empty($folder_to_backup)) $line = str_replace('/', '_', '/' . $folder_to_backup); else $line = '';
+
 // just the folder where this script runs and from where we look out
-$script_folder_name = str_replace("/", "", substr($_SERVER['SCRIPT_NAME'], 0, strrpos($_SERVER['SCRIPT_NAME'], "/") + 1));
+//$script_folder_name = str_replace("/", "", substr($_SERVER['SCRIPT_NAME'], 0, strrpos($_SERVER['SCRIPT_NAME'], "/") + 1));
+
 // the path and name of the backup file, loos like this: "backups/1982_02_10_23_45_picowiki.zip" or "backups/1982_02_10_23_45_picowiki_content_images.zip"
-$backup_file_name   = $backup_folder . '/' . date("Y_m_d_H_i") . '_' . $script_folder_name . $line . '.zip';
+$backup_file_name   = $backup_folder . '/' . date("Y_m_d_H_i_s") . '_' . $script_folder_name . $line . '.zip';
+
 
 // create the backup_folder if it not exist
 if (!file_exists($backup_folder)) {mkdir($backup_folder, 0777, true);}
+
 
 // Backup function
 function run_backup($folder_to_backup, $backup_file_name, $not_to_backup)
@@ -110,14 +119,8 @@ function human_filesize($bytes, $decimals = 2)
 // make list of all archives
 function getFileList($dir, $recurse = false)
 {
-    // array to hold return value
-    $retval  = [];
-
-    // add trailing slash if missing
-    if (substr($dir, -1) != "/")
-    {
-        $dir .= "/";
-    }
+    $retval  = []; // array to hold return value
+    if (substr($dir, -1) != "/"){$dir .= "/";} // add trailing slash if missing
 
     // open pointer to directory and read list of files
     $dir_list = @dir($dir) or die("getFileList: Failed opening directory {$dir} for reading");
@@ -146,22 +149,41 @@ function getFileList($dir, $recurse = false)
         }
     }
     $dir_list->close();
+    //print_r($retval);
 
-    // sort array
-    foreach ($retval as $key => $row)
+    foreach ($retval as $key => $row) // sort array
     {
         $name[$key] = $row['name'];
     }
     if (isset($name) and is_array($name))
     {
-        array_multisort($name, SORT_ASC, SORT_STRING, $retval);
+        array_multisort($name, SORT_DESC, SORT_STRING, $retval);
     }
     // print_r($retval);
     return $retval;
 }// make list of all archives
 
+
+// get size of the lastest backup file
+$files          = scandir($backup_folder, SCANDIR_SORT_DESCENDING);
+$last_file_size = filesize($backup_folder.'/'.$files[0] );
+
+
 // run di dance
 run_backup($folder_to_backup, $backup_file_name, $not_to_backup);
+
+
+// get size of this backupfile
+$files          = scandir($backup_folder, SCANDIR_SORT_DESCENDING);
+$this_file_name = $files[0];
+$this_file_size = filesize($backup_folder.'/'.$files[0] );
+
+// delete this backup, if the same size like last backup
+if ($last_file_size == $this_file_size){
+  unlink($backup_folder.'/'.$files[0]);
+  echo 'no changes';
+}
+
 
 
 // HTML output of all archives
